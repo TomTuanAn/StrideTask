@@ -1,0 +1,170 @@
+Setup Hermes Relayer between Stride and GAIA
+1. RPC Endpoint of GAIA fullnode, Juno fullnode
+
+I used the RPC Endpoint of a existing GAIA node, which address is http://185.249.225.35:23657/
+
+2. Check my Stride node already full synced. The check command as below
+
+root@vmi941845:/etc/systemd# strided status |jq .SyncInfo
+{
+  "latest_block_hash": "A6C204C3BAF0E26C47A22605D40E82753A025E25CD67BB08C6A39E5DF5CA9D9E",
+  "latest_app_hash": "D54C9945F0B12A77B59FA7755F379F401F3BD5EB59FFAB71CF17C0798EEA465C",
+  "latest_block_height": "70500",
+  "latest_block_time": "2022-08-23T17:28:52.37105282Z",
+  "earliest_block_hash": "AE7BD92993E8583921B0AA62549913444C3B0699A79CCB038DE30523D0F7B230",
+  "earliest_app_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+  "earliest_block_height": "1",
+  "earliest_block_time": "2022-08-19T00:42:38.602751256Z",
+  "catching_up": false
+}
+3. Set indexer to kv on each chain
+sed -i -e "s/^indexer *=.*/indexer = \"kv\"/" $HOME/.stride/config/config.toml
+sed -i -e "s/^indexer *=.*/indexer = \"kv\"/" $HOME/.gaia/config/config.toml
+Check result:
+root@vmi941845:/etc/systemd# cat $HOME/.stride/config/config.toml |grep index*
+#   - may be faster is some use-cases (random reads - indexer)
+[tx_index]
+# What indexer to use for transactions
+# The application will set which txs to index. In some cases a node operator will be able
+# to decide which txs to index based on configuration set in the application.
+#   2) "kv" (default) - the simplest possible indexer, backed by key-value storage (defaults to levelDB; see DBBackend).
+#               - When "kv" is chosen "tx.height" and "tx.hash" will always be indexed.
+indexer = "kv"
+root@vmi941845:/etc/systemd# cat $HOME/.gaia/config/config.toml |grep index*
+#   - may be faster is some use-cases (random reads - indexer)
+[tx_index]
+# What indexer to use for transactions
+# The application will set which txs to index. In some cases a node operator will be able
+# to decide which txs to index based on configuration set in the application.
+#   2) "kv" (default) - the simplest possible indexer, backed by key-value storage (defaults to levelDB; see DBBackend).
+#               - When "kv" is chosen "tx.height" and "tx.hash" will always be indexed.
+indexer = "kv"
+root@vmi941845:/etc/systemd#
+3. Expose your RPC endpoint to public, then Hermes can be reached (If Hermes and your fullnodes are on same vps, no need to do it)
+sed -i.bak -e 's|^laddr = \"tcp:\/\/.*:\([0-9].*\)57\"|laddr = \"tcp:\/\/0\.0\.0\.0:\657\"|' $HOME/.stride/config/config.toml  
+sed -i.bak -e 's|^laddr = \"tcp:\/\/.*:\([0-9].*\)57\"|laddr = \"tcp:\/\/0\.0\.0\.0:\157\"|' $HOME/.gaia/config/config.toml 
+Results:
+root@vmi941845:/etc/systemd# cat $HOME/.stride/config/config.toml |grep laddr*
+priv_validator_laddr = ""
+laddr = "tcp://0.0.0.0:44657"
+grpc_laddr = ""
+pprof_laddr = "localhost:44060"
+laddr = "tcp://0.0.0.0:44656"
+# If empty, will use the same port as the laddr,
+root@vmi941845:/etc/systemd# cat $HOME/.gaia/config/config.toml |grep laddr*
+priv_validator_laddr = ""
+laddr = "tcp://127.0.0.1:23657"
+grpc_laddr = ""
+pprof_laddr = "localhost:23060"
+laddr = "tcp://0.0.0.0:23656"
+# If empty, will use the same port as the laddr,
+root@vmi941845:/etc/systemd#
+4. root@vmi941845:/etc/systemd# cat $HOME/.gaia/config/config.toml |grep laddr*
+priv_validator_laddr = ""
+laddr = "tcp://127.0.0.1:23657"
+grpc_laddr = ""
+pprof_laddr = "localhost:23060"
+laddr = "tcp://0.0.0.0:23656"
+# If empty, will use the same port as the laddr,
+root@vmi941845:/etc/systemd#
+5. Restart fullnode after changing in step 3 & 4
+6. Install Hermes binary
+mkdir -p $HOME/.hermes/bin  
+ cd $HOME/.hermes/bin  
+ wget https://github.com/informalsystems/ibc-rs/releases/download/v1.0.0-rc.0/hermes-v1.0.0-rc.0-x86_64-unknown-linux-gnu.tar.gz
+ tar -C $HOME/.hermes/bin/ -vxzf hermes-v1.0.0-rc.0-x86_64-unknown-linux-gnu.tar.gz
+ echo 'export PATH="$HOME/.hermes/bin:$PATH"' >> $HOME/.bash_profile
+ source $HOME/.bash_profile
+ hermes version
+ Result:
+ root@vmi941845:/etc/systemd# hermes version
+hermes 1.0.0-rc.0+b80bcea
+ root@vmi941845:/etc/systemd#
+7. Make configuration data for Hermes:
+Note:
+Pay attention to following parameters rpc_addr, grpc_addr, websocket_addr
+If Hermes and your fullnode are on same vps, format of these parameter will be: rpc_addr='http://localhost:RPC_PORT' (Rerfe step 5)
+If Hermes and your fullnode are on different vps, format of these parameter will be: rpc_addr='http://VPS_IP:RPC_PORT' (Refer step 5)
+The parameter key_name must be same as name of wallet to be added into Hermes later
+Result:
+root@vmi941845:/etc/systemd# cat $HOME/.hermes/config.toml  *just show import information
+[[chains]]
+id = 'STRIDE-TESTNET-4'
+rpc_addr = 'http://localhost:44657'
+grpc_addr = 'http://localhost:44090'
+websocket_addr = 'ws://localhost:44657/websocket'
+rpc_timeout = '300s'
+account_prefix = 'stride'
+key_name = 'stride-rly'
+address_type = { derivation = 'cosmos' }
+[[chains]]
+id = 'GAIA'
+rpc_addr = 'http://185.249.225.35:23657'
+grpc_addr = 'http://185.249.225.35:23090'
+websocket_addr = 'ws://185.249.225.35:23657/websocket'
+rpc_timeout = '300s'
+account_prefix = 'cosmos'
+key_name = 'gaia-rly'
+address_type = { derivation = 'cosmos' }
+memo_prefix = 'TuanAn#1854'
+
+8. Create rly-json file of stride/gaia wallet on each chain with below format
+
+strided keys show WALLET_NAME --output json | jq > /root/.hermes/stride-rly.json
+gaiad keys show WALLET_NAME --output json | jq > /root/.hermes/gaia-rly.json
+
+root@vmi941845:/etc/systemd# cat /root/.hermes/stride-rly.json
+{
+  "name": "tomtuanan",
+  "type": "local",
+  "address": "stride1ee66fzcg490m5t5rc0h58m7r08gj7dxczvnu52",
+  "pubkey": "{\"@type\":\"/cosmos.crypto.secp256k1.PubKey\",\"key\":\"A3KEiAculVzfIKruBjjaOZm3zePzWH9HuSTniRrj9Y1a\"}",
+"mnemonic":"trend gym present false net slam fat cave over follow rather pony weekend toe analyst space dumb elevator trophy like manual ten tuition lion"
+}
+root@vmi941845:/etc/systemd# cat /root/.hermes/gaia-rly.json
+{
+  "name": "tomtuanan",
+  "type": "local",
+  "address": "cosmos1ee66fzcg490m5t5rc0h58m7r08gj7dxcp8nqqx",
+  "pubkey": "{\"@type\":\"/cosmos.crypto.secp256k1.PubKey\",\"key\":\"A3KEiAculVzfIKruBjjaOZm3zePzWH9HuSTniRrj9Y1a\"}",
+"mnemonic":"trend gym present false net slam fat cave over follow rather pony weekend toe analyst space dumb elevator trophy like manual ten tuition lion"
+}
+root@vmi941845:/etc/systemd#
+9. Import wallet into hermes
+
+cd /root/.hermes/
+hermes keys add --chain STRIDE-TESTNET-4 --key-file stride-rly.json
+hermes keys add --chain GAIA --key-file gaia-rly.json
+Health check and validate configuration
+10. Check the hermes status
+hermes health-check
+hermes config validate
+11. Create the hermes serivice & start the serivice
+Result:
+cat /etc/systemd/system/hermesd.service
+root@vmi941845:~/.hermes# cat /etc/systemd/system/hermesd.service
+[Unit]
+Description=hermes
+After=network-online.target
+
+[Service]
+User=root
+ExecStart=/root/.hermes/bin/hermes start
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+root@vmi941845:~/.hermes#
+Then, use below command to load/enable or restart hermesd
+sudo systemctl daemon-reload
+sudo systemctl enable hermesd
+sudo systemctl restart hermesd
+12. Monitor log until new channel is created
+sudo journalctl -fu hermesd -o cat
+
+13. Send raw data between 2 relayers via established channel ID (channel ID get from Stride discord - updated later)
+hermes tx raw ft-transfer --dst-chain GAIA --src-chain STRIDE-TESTNET-4 --src-port transfer --src-channel channel-0 --amount 1000 --denom ustrd --timeout-height-offset 1000 --number-msgs 1
+
+14. Check transaction of your wallet on explorer to findout the message Update Client (IBC)
